@@ -207,6 +207,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             state_topic: String,
             unit_of_measurement: Option<String>,
             icon: Option<String>,
+            unique_id: String,
         }
 
         let message = serde_json::ser::to_string(&TopicConfig {
@@ -215,6 +216,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             state_topic: format!("system-mqtt/{}/{}", hostname, topic_name),
             unit_of_measurement: unit_of_measurement.map(str::to_string),
             icon: icon.map(str::to_string),
+            unique_id: format!("system-mqtt-{}-{}", hostname, topic_name)
         })?;
         let mut publish = Publish::new(
             format!(
