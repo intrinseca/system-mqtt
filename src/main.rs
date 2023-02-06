@@ -186,8 +186,6 @@ async fn application_trampoline(config: &Config) -> Result<()> {
     let mut client = client_builder.build()?;
     client.connect().await?;
 
-    let manager = battery::Manager::new()?;
-
     let platform = host::platform().await?;
     let hostname = platform.hostname();
 
@@ -301,26 +299,6 @@ async fn application_trampoline(config: &Config) -> Result<()> {
         Some("mdi:gauge"),
     )
     .await?;
-    register_topic(
-        &mut client,
-        hostname,
-        "sensor",
-        Some("battery"),
-        "battery_level",
-        Some("%"),
-        Some("mdi:battery"),
-    )
-    .await?;
-    register_topic(
-        &mut client,
-        hostname,
-        "sensor",
-        None,
-        "battery_state",
-        None,
-        Some("mdi:battery"),
-    )
-    .await?;
 
     // Register the sensors for filesystems
     for drive in &config.drives {
@@ -369,17 +347,17 @@ async fn application_trampoline(config: &Config) -> Result<()> {
                 previous_total_cpu_time = total_cpu_time;
 
                 let cpu_load_percentile = used_cpu_time_delta / total_cpu_time_delta;
-                publish(&mut client, &hostname, "cpu", (cpu_load_percentile.get::<heim::units::ratio::ratio>().clamp(0.0, 1.0) * 100.0).to_string()).await?;
+                publish(&mut client, &hostname, "cpu", format!("{:.1}", cpu_load_percentile.get::<heim::units::ratio::ratio>().clamp(0.0, 1.0) * 100.0)).await?;
 
                 // Report memory usage.
                 let memory = memory::memory().await?;
                 let memory_percentile = (memory.total().get::<heim::units::information::byte>() - memory.available().get::<heim::units::information::byte>()) as f64 / memory.total().get::<heim::units::information::byte>() as f64;
-                publish(&mut client, &hostname, "memory", (memory_percentile.clamp(0.0, 1.0)* 100.0).to_string()).await?;
+                publish(&mut client, &hostname, "memory", format!("{:.1}", memory_percentile.clamp(0.0, 1.0) * 100.0)).await?;
 
                 // Report swap usage.
                 let swap = memory::swap().await?;
                 let swap_percentile = swap.used().get::<heim::units::information::byte>() as f64 / swap.total().get::<heim::units::information::byte>() as f64;
-                publish(&mut client, &hostname, "swap", (swap_percentile.clamp(0.0, 1.0) * 100.0).to_string()).await?;
+                publish(&mut client, &hostname, "swap", format!("{:.1}", swap_percentile.clamp(0.0, 1.0) * 100.0)).await?;
 
                 // Report filesystem usage.
                 for drive in &config.drives {
@@ -387,36 +365,11 @@ async fn application_trampoline(config: &Config) -> Result<()> {
                         Ok(disk) => {
                             let drive_percentile = (disk.total().get::<heim::units::information::byte>() - disk.free().get::<heim::units::information::byte>()) as f64 / disk.total().get::<heim::units::information::byte>() as f64;
 
-                            publish(&mut client, &hostname, &drive.name, (drive_percentile.clamp(0.0, 1.0) * 100.0).to_string()).await?;
+                            publish(&mut client, &hostname, &drive.name, format!("{:.1}", drive_percentile.clamp(0.0, 1.0) * 100.0)).await?;
                         },
                         Err(error) => {
                             log::warn!("Unable to read drive usage statistics: {}", error);
                         }
-                    }
-                }
-
-                for maybe_battery in manager.batteries()? {
-                    if let Ok(battery) = maybe_battery {
-                        use battery::State;
-
-                        let battery_state = match battery.state() {
-                            State::Charging => "charging",
-                            State::Discharging => "discharging",
-                            State::Empty => "empty",
-                            State::Full => "full",
-                            _ => "unknown",
-                        };
-
-                        publish(&mut client, &hostname, "battery_state", battery_state.to_string()).await?;
-
-                        let battery_full = battery.energy_full();
-                        let battery_power = battery.energy();
-                        let battery_level = battery_power / battery_full;
-
-                        publish(&mut client, &hostname, "battery_level", format!("{:03}", battery_level.get::<heim::units::ratio::percent>())).await?;
-
-                        // TODO we should probably combine the battery charges, but for now we're just going to use the first detected battery.
-                        break;
                     }
                 }
             }
